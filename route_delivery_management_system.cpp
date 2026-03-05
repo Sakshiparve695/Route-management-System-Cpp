@@ -1,179 +1,100 @@
-#include <iostream>
-#include <unordered_map>
-#include <vector>
-#include <queue>
-#include <limits>
-using namespace std;
+import mysql.connector
 
-class RouteSystem {
-private:
-    unordered_map<string, vector<pair<string, int>>> graph;
-    queue<string> deliveryQueue;
+def connect_db():
+    return mysql.connector.connect(
+        host="localhost",
+        user="root",
+        password="Sakshi@123",
+        database="smart_delivery_system"
+    )
 
-public:
-    // Add Location
-    void addLocation(string loc) {
-        if (graph.find(loc) == graph.end()) {
-            graph[loc] = {};
-            cout << "Location '" << loc << "' added.\n";
-        } else {
-            cout << "Location already exists.\n";
-        }
-    }
+# --------------- ROAD PROGRAM -----------------
 
-    // Add Road (edge)
-    void addRoad(string src, string dest, int dist) {
-        graph[src].push_back({dest, dist});
-        graph[dest].push_back({src, dist});
-        cout << "Road added between " << src << " and " << dest << " distance " << dist << " km\n";
-    }
+def load_graph():
+    conn = connect_db()
+    cursor = conn.cursor()
 
-    // Dijkstra shortest path
-    void shortestPath(string start, string end) {
-        unordered_map<string, int> distance;
-        unordered_map<string, string> parent;
+    cursor.execute("SELECT source_location, destination_location, distance FROM roads")
 
-        for (auto &node : graph) {
-            distance[node.first] = INT_MAX;
-        }
+    graph = {}
 
-        priority_queue<pair<int, string>, vector<pair<int, string>>, greater<>> pq;
+    for src, dest, dist in cursor.fetchall():
+        graph.setdefault(src, []).append((dest, dist))
+        graph.setdefault(dest, []).append((src, dist))
 
-        distance[start] = 0;
-        pq.push({0, start});
+    return graph
 
-        while (!pq.empty()) {
-            auto [dist, node] = pq.top();
-            pq.pop();
+#------------------- ROUTE OPTIMISATION -----------------------
 
-            for (auto &neighbor : graph[node]) {
-                string next = neighbor.first;
-                int weight = neighbor.second;
+import heapq
 
-                if (dist + weight < distance[next]) {
-                    distance[next] = dist + weight;
-                    parent[next] = node;
-                    pq.push({distance[next], next});
-                }
-            }
-        }
+def dijkstra(graph, start, end):
+    pq = [(0, start)]
+    distances = {node: float('inf') for node in graph}
+    distances[start] = 0
+    parent = {}
 
-        // print path
-        cout << "\nShortest Path: ";
-        string curr = end;
-        vector<string> path;
+    while pq:
+        current_distance, node = heapq.heappop(pq)
 
-        while (curr != start) {
-            path.push_back(curr);
-            curr = parent[curr];
-        }
-        path.push_back(start);
+        if node == end:
+            break
 
-        for (int i = path.size() - 1; i >= 0; i--) {
-            cout << path[i];
-            if (i != 0) cout << " -> ";
-        }
+        for neighbor, weight in graph[node]:
+            distance = current_distance + weight
 
-        cout << "\nTotal Distance: " << distance[end] << " km\n";
-    }
+            if distance < distances[neighbor]:
+                distances[neighbor] = distance
+                parent[neighbor] = node
+                heapq.heappush(pq, (distance, neighbor))
 
-    // Add Delivery Order
-    void addDelivery(string order) {
-        deliveryQueue.push(order);
-        cout << "Order '" << order << "' added to queue.\n";
-    }
+    path = []
+    current = end
 
-    // Process Delivery
-    void processDelivery() {
-        if (!deliveryQueue.empty()) {
-            cout << "Delivering: " << deliveryQueue.front() << endl;
-            deliveryQueue.pop();
-        } else {
-            cout << "No pending deliveries.\n";
-        }
-    }
+    while current in parent:
+        path.append(current)
+        current = parent[current]
 
-    // View Queue
-    void viewQueue() {
-        queue<string> temp = deliveryQueue;
+    path.append(start)
+    path.reverse()
 
-        if (temp.empty()) {
-            cout << "No pending deliveries.\n";
-            return;
-        }
+    return path, distances[end]
 
-        cout << "\nPending Deliveries:\n";
-        while (!temp.empty()) {
-            cout << "- " << temp.front() << endl;
-            temp.pop();
-        }
-    }
-};
 
-int main() {
-    RouteSystem system;
-    int choice;
+if __name__ == "__main__":
+    graph = load_graph()
 
-    while (true) {
-        cout << "\n====== SMART ROUTE SYSTEM (C++) ======\n";
-        cout << "1. Add Location\n";
-        cout << "2. Add Road\n";
-        cout << "3. Find Shortest Route\n";
-        cout << "4. Add Delivery Order\n";
-        cout << "5. Process Delivery\n";
-        cout << "6. View Delivery Queue\n";
-        cout << "7. Exit\n";
+    start = 1
+    end = 10
 
-        cout << "Enter choice: ";
-        cin >> choice;
-        cin.ignore();
+    path, distance = dijkstra(graph, start, end)
 
-        if (choice == 1) {
-            string loc;
-            cout << "Enter location: ";
-            getline(cin, loc);
-            system.addLocation(loc);
+    print("Optimal Route:", path)
+    print("Total Distance:", distance)
 
-        } else if (choice == 2) {
-            string src, dest;
-            int dist;
-            cout << "Enter source: ";
-            getline(cin, src);
-            cout << "Enter destination: ";
-            getline(cin, dest);
-            cout << "Enter distance: ";
-            cin >> dist;
-            cin.ignore();
-            system.addRoad(src, dest, dist);
+# -------- GRAPH VISUALIZATION ---------
 
-        } else if (choice == 3) {
-            string s, d;
-            cout << "Enter start: ";
-            getline(cin, s);
-            cout << "Enter end: ";
-            getline(cin, d);
-            system.shortestPath(s, d);
+import matplotlib.pyplot as plt
+import networkx as nx
 
-        } else if (choice == 4) {
-            string order;
-            cout << "Enter order: ";
-            getline(cin, order);
-            system.addDelivery(order);
+G = nx.Graph()
 
-        } else if (choice == 5) {
-            system.processDelivery();
+for node in graph:
+    for neighbor, weight in graph[node]:
+        G.add_edge(node, neighbor, weight=weight)
 
-        } else if (choice == 6) {
-            system.viewQueue();
+pos = nx.spring_layout(G)
 
-        } else if (choice == 7) {
-            cout << "Exiting...\n";
-            break;
+# Draw all nodes and edges
+nx.draw(G, pos, with_labels=True)
 
-        } else {
-            cout << "Invalid choice.\n";
-        }
-    }
+# Draw edge weights
+edge_labels = nx.get_edge_attributes(G, 'weight')
+nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels)
 
-    return 0;
-}
+# --- Highlight optimal route ---
+path_edges = list(zip(path, path[1:]))
+nx.draw_networkx_edges(G, pos, edgelist=path_edges, width=3)
+
+plt.title("Smart Delivery Route Network (Optimal Route Highlighted)")
+plt.show()
